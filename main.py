@@ -5,9 +5,11 @@ from pid import PID
 from video import Video
 from bluerov_interface import BlueROV
 from pymavlink import mavutil
+from dt_apriltags import Detector
 
 # TODO: import your processing functions
 
+from apriltag_processing import *
 
 # Create the video object
 video = Video()
@@ -33,18 +35,50 @@ def _get_frame():
         print("Waiting for frame...")
         sleep(0.01)
 
+    at_detector = Detector(
+        families="tag36h11",
+        nthreads=1,
+        quad_decimate=1.0,
+        quad_sigma=0.0,
+        refine_edges=1,
+        decode_sharpening=0.25,
+        debug=0,
+    )
+
     try:
         while True:
             if video.frame_available():
                 frame = video.frame()
+
                 # TODO: Add frame processing here
-                # TODO: set vertical_power and lateral_power here
+                try:
+                    height, width, channels = frame.shape
+
+                    tags = detect_april_tags(frame, at_detector)
+
+                    x_raw_error, y_raw_error = determine_error(tags, (width, height))
+
+                    errors = (x_raw_error, y_raw_error)
+                    pid_controllers = (pid_horizontal, pid_vertical)
+
+                    x_output, y_output = calculate_pid_output(errors, pid_controllers)
+
+                    # TODO: set vertical_power and lateral_power here
+                    lateral_power = x_output
+                    vertical_power = y_output
+
+                except Exception as e:
+                    print(e)
+
                 print(frame.shape)
+
     except KeyboardInterrupt:
         return
 
 
 def _send_rc():
+    global lateral_power, vertical_power
+
     bluerov.set_vertical_power(vertical_power)
     bluerov.set_lateral_power(lateral_power)
 
